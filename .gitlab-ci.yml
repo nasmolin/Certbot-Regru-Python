@@ -1,0 +1,51 @@
+stages:
+  - update-certificates
+
+default:
+  tags:
+    - docker
+
+variables:
+  ENV_FILE: ".env"
+  JOB_ARTIFACTS: "artifacts"
+  LE_LOG: "/var/log/letsencrypt/letsencrypt.log"
+  APP_LOG: "app.log"
+  CERTS_DIR: "/etc/letsencrypt"
+
+update_certificates:
+  stage: update-certificates
+  timeout: 5h
+  when: manual
+  image: python:3.9-slim
+  before_script:
+    - apt-get update
+    - apt-get install -y certbot curl dnsutils tzdata
+    - ln -sf /usr/share/zoneinfo/Europe/Moscow /etc/localtime
+    - echo "Europe/Moscow" > /etc/timezone
+    - dpkg-reconfigure -f noninteractive tzdata
+    - pip install --upgrade pip
+    - pip install -r requirements.txt
+    - echo CERT_EMAIL=${CERT_EMAIL} > ${ENV_FILE}
+    - echo WILDCARD_DOMAIN=${WILDCARD_DOMAIN} >> ${ENV_FILE}
+    - echo REG_RU_USERNAME=${REG_RU_USERNAME} >> ${ENV_FILE}
+    - echo REG_RU_PASSWORD=${REG_RU_PASSWORD} >> ${ENV_FILE}
+    - echo REG_RU_DOMAIN_ZONE=${REG_RU_DOMAIN_ZONE} >> ${ENV_FILE}
+    - echo TELEGRAM_TOKEN=${TELEGRAM_TOKEN} >> ${ENV_FILE}
+    - echo TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID} >> ${ENV_FILE}
+    - echo MAX_ATTEMPTS=${MAX_ATTEMPTS} >> ${ENV_FILE}
+    - echo DELAY=${DELAY} >> ${ENV_FILE}
+    - chmod +x ./post_hook.sh ./manual_auth_hook.py ./manual_cleanup_hook.py
+  script:
+    - python3 get_certificate.py
+  after_script:
+    - | 
+      python3 generate_artifacts.py \
+        --output ${JOB_ARTIFACTS} \
+        --paths ${CERTS_DIR} ${LE_LOG} ${APP_LOG}
+  artifacts:
+    paths:
+      - ${JOB_ARTIFACTS}/
+    expire_in: 1 week
+    when: always
+  resource_group: only_one_certbot_job_per_time
+
